@@ -19,3 +19,4 @@
 .vscode
 .idea
 protoc-gen-go
+go.sum
