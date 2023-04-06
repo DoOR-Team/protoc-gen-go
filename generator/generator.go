@@ -57,8 +57,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/protoc-gen-go/generator/internal/remap"
+	"google.golang.org/protobuf/types/descriptorpb"
 
+	"github.com/DoOR-Team/protoc-gen-go/generator/internal/remap"
 	"github.com/golang/protobuf/protoc-gen-go/descriptor"
 	plugin "github.com/golang/protobuf/protoc-gen-go/plugin"
 )
@@ -67,7 +68,7 @@ import (
 // It is incremented whenever an incompatibility between the generated code and
 // proto package is introduced; the generated code references
 // a constant, proto.ProtoPackageIsVersionN (where N is generatedCodeVersion).
-const generatedCodeVersion = 2
+const generatedCodeVersion = 3
 
 // A Plugin provides functionality to add to the output during Go code generation,
 // such as to produce RPC stubs.
@@ -1117,6 +1118,31 @@ func (g *Generator) runPlugins(file *FileDescriptor) {
 	}
 }
 
+const int64StrImport = `import "encoding/json"
+import "strconv"`
+
+const int64Str = `type Int64Str int64
+ 
+func (i Int64Str) MarshalJSON() ([]byte, error) {
+		return json.Marshal(strconv.FormatInt(int64(i), 10))
+}
+ 
+func (i *Int64Str) UnmarshalJSON(b []byte) error {
+    // Try string first
+    var s string
+    if err := json.Unmarshal(b, &s); err == nil {
+        value, err := strconv.ParseInt(s, 10, 64)
+        if err != nil {
+            return err
+        }
+        *i = Int64Str(value)
+        return nil
+    }
+ 
+    // Fallback to number
+    return json.Unmarshal(b, (*int64)(i))
+}`
+
 // Fill the response protocol buffer with the generated output for all the files we're
 // supposed to generate.
 func (g *Generator) generate(file *FileDescriptor) {
@@ -1133,6 +1159,7 @@ func (g *Generator) generate(file *FileDescriptor) {
 	g.P("// A compilation error at this line likely means your copy of the")
 	g.P("// proto package needs to be updated.")
 	g.P("const _ = ", g.Pkg["proto"], ".ProtoPackageIsVersion", generatedCodeVersion, " // please upgrade the proto package")
+	g.P(int64Str)
 	g.P()
 
 	for _, td := range g.file.imp {
@@ -1293,6 +1320,8 @@ func (g *Generator) generateImports() {
 	g.P("import "+g.Pkg["proto"]+" ", GoImportPath(g.ImportPrefix)+"github.com/golang/protobuf/proto")
 	g.P("import " + g.Pkg["fmt"] + ` "fmt"`)
 	g.P("import " + g.Pkg["math"] + ` "math"`)
+	g.P("import " + "json" + ` "encoding/json"`)
+	g.P("import " + "strconv" + ` "strconv"`)
 	var (
 		imports       = make(map[GoImportPath]bool)
 		strongImports = make(map[GoImportPath]bool)
@@ -1570,9 +1599,9 @@ func (g *Generator) goTag(message *Descriptor, field *descriptor.FieldDescriptor
 	if message.proto3() {
 		// We only need the extra tag for []byte fields;
 		// no need to add noise for the others.
-		if *field.Type == descriptor.FieldDescriptorProto_TYPE_BYTES {
-			name += ",proto3"
-		}
+		// if *field.Type == descriptor.FieldDescriptorProto_TYPE_BYTES {
+		name += ",proto3"
+		// }
 
 	}
 	oneof := ""
@@ -1658,7 +1687,12 @@ func (g *Generator) GoType(message *Descriptor, field *descriptor.FieldDescripto
 		g.Fail("unknown type for", field.GetName())
 	}
 	if isRepeated(field) {
-		typ = "[]" + typ
+		if typ == "int64" {
+			typ = "[]Int64Str"
+		} else {
+			typ = "[]" + typ
+		}
+
 	} else if message != nil && message.proto3() {
 		return
 	} else if field.OneofIndex != nil && message != nil {
@@ -1781,6 +1815,15 @@ func (g *Generator) generateMessage(message *Descriptor) {
 		fieldName, fieldGetterName := ns[0], ns[1]
 		typename, wiretype := g.GoType(message, field)
 		jsonName := *field.Name
+
+		if field.Type != nil && !isRepeated(field) && (*field.Type == descriptorpb.FieldDescriptorProto_TYPE_SFIXED64 ||
+			*field.Type == descriptorpb.FieldDescriptorProto_TYPE_INT64 ||
+			*field.Type == descriptorpb.FieldDescriptorProto_TYPE_UINT64 ||
+			*field.Type == descriptorpb.FieldDescriptorProto_TYPE_FIXED64 ||
+			*field.Type == descriptorpb.FieldDescriptorProto_TYPE_SINT64) {
+			// fmt.Println("field", field)
+			jsonName += ",string"
+		}
 		tag := fmt.Sprintf("protobuf:%s json:%q", g.goTag(message, field, wiretype), jsonName+",omitempty")
 
 		fieldNames[field] = fieldName

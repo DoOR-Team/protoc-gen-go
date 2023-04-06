@@ -7,16 +7,9 @@
   ```
 - 获取grpcgateway，通过git clone，这里grpcgateway是V1版本
   ```bash
-  mkdir -p %GOPATH/src/github.com/grpc-ecosystem
-  cd %GOPATH/src/github.com/grpc-ecosystem
-  git clone git@github.com:grpc-ecosystem/grpc-gateway.git
-  git checkout v1.15.2
-  ```
-- go install grpcwateway，和swagger
-  ```bash
   go install \
-      github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway \
-      github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger
+    github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway@v1.15.2 \
+    github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger@v1.15.2
   ```
 
 - 通过本项目，生成protoc-gen-go
